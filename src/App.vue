@@ -1,78 +1,145 @@
 <script setup>
 
-import { compileModel, Options, Solver, Vector } from '@martinjrobins/diffeq-js';
-
-const code = `
-in = [k1, k2, k3]
-k1 { 0.04 }
-k2 { 10000 }
-k3 { 30000000 }
-u_i {
-  x = 1,
-  y = 0,
-  z = 0,
+import { runModel2 } from './engine/diffeq';
+const params = {
+  "membrane_capacitance": 20,
+  "current_conductance": "50",
+  "p1": "2.07e-3",
+  "p2": "7.17e-2",
+  "p3": "3.44e-5",
+  "p4": "6.18e-2",
+  "p5": "4.18e-1",
+  "p6": "2.58e-2",
+  "p7": "4.75e-2",
+  "p8": "2.51e-2",
+  "leak_reversal_potential": -80,
+  "seal_resistance": 5000,
+  "estimated_seal_resistance": 5000,
+  "estimated_leak_reversal_potential": -80,
+  "pipette_capacitance": 4,
+  "series_resistance": 30,
+  "pipette_solution": 130,
+  "bath_solution": 5.4,
+  "test_pulse_duration": [
+    "250",
+    "5",
+    "400",
+    "200",
+    "1000",
+    "500",
+    "1000",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "10",
+    "100",
+    "390",
+    "100"
+  ],
+  "test_pulse_voltage": [
+    "-80",
+    "-120",
+    "-80",
+    "-80",
+    "40",
+    "-120",
+    "-80",
+    "-40",
+    "-60",
+    "-20",
+    "-40",
+    "0",
+    "-20",
+    "20",
+    "0",
+    "40",
+    "20",
+    "40",
+    "0",
+    "20",
+    "-20",
+    "0",
+    "-40",
+    "-20",
+    "-60",
+    "-40",
+    "-80",
+    "40",
+    "-70",
+    "-120",
+    "-120",
+    "-80"
+  ],
+  "test_pulse_is_ramp": [
+    false,
+    false,
+    true,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    true,
+    false,
+    false
+  ],
+  "effective_voltage_offset": 0,
+  "estimated_pipette_capacitance": 4,
+  "estimated_membrane_capacitance": 20,
+  "estimated_series_resistance": 30,
+  "series_resistance_compensation": 70,
+  "prediction": 70,
+  "tau_sum": 0.001,
+  "tau_clamp": 0.001,
+  "tau_out": 0.0075,
+  "tau_rs": 0.1
 }
-dudt_i {
-  dxdt = 1,
-  dydt = 0,
-  dzdt = 0,
-}
-F_i {
-  dxdt,
-  dydt,
-  0,
-}
-G_i {
-  -k1 * x + k2 * y * z,
-  k1 * x - k2 * y * z - k3 * y * y,
-  1 - x - y - z,
-}
-out_i {
-  x,
-  y,
-  z,
-}`;
-
-const model = compileModel(code).then((model) => {
-  const options = new Options({});
-
-  // create solver with default options
-  const solver = new Solver(options);
-
-  // solve the model at k1 = 0.04, k2 = 1e4, k3 = 3e7
-  const inputs = new Vector([0.04, 1e4, 3e7]);
-
-  // create a vector to store the output
-  const outputs = new Vector([]);
-
-  // solve the model from t = 0 to t = 1e5
-  const times = new Vector([0, 1e5]);
-
-  // solve the model, afterwards times will contain the times at which the
-  // solution was computed, and outputs will contain the solution itself
-  // in a vector of length 3 * times.length, where the first 3 elements
-  // are the solution at times[0], the next 3 elements are the solution at
-  // times[1], etc.
-  solver.solve(times, inputs, outputs);
-
-  // The contents of times and outputs are stored in WASM linear memory.
-  // To access the contents of the vectors, use the getFloat64Array method
-  // which returns a Float64Array view of the vector's contents
-  console.log('times', times.getFloat64Array());
-  console.log('outputs', outputs.getFloat64Array());
-});
-
-
-
-
-
-
 
 
 </script>
 
 <template>
 <h1>hello</h1>
+  <button @click="runModel2(params)">run</button>
 </template>
 
 <style scoped>
