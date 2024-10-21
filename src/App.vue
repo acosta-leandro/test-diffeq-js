@@ -1,7 +1,8 @@
 <script setup>
+import { ref } from 'vue';
+import { runFixedTime, runVariableTime } from './engine/diffeq';
 
-import { runModel2, runModel4  } from './engine/diffeq';
-const params = {
+const params = ref({
   "membrane_capacitance": 20,
   "current_conductance": 50,
   "p1": 2.07e-3,
@@ -21,19 +22,105 @@ const params = {
   "pipette_solution": 130,
   "bath_solution": 5.4,
   "test_pulse_duration": [
-    500,
-    500,
-    500
+    "250",
+    "5",
+    "400",
+    "200",
+    "1000",
+    "500",
+    "1000",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "500",
+    "10",
+    "100",
+    "390",
+    "100"
   ],
   "test_pulse_voltage": [
-    -80,
-    40,
-    -40
+    "-80",
+    "-120",
+    "-80",
+    "-80",
+    "40",
+    "-120",
+    "-80",
+    "-40",
+    "-60",
+    "-20",
+    "-40",
+    "0",
+    "-20",
+    "20",
+    "0",
+    "40",
+    "20",
+    "40",
+    "0",
+    "20",
+    "-20",
+    "0",
+    "-40",
+    "-20",
+    "-60",
+    "-40",
+    "-80",
+    "40",
+    "-70",
+    "-120",
+    "-120",
+    "-80"
   ],
   "test_pulse_is_ramp": [
-    false,
-    false,
-    false
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      false,
+      false
   ],
   "effective_voltage_offset": 0,
   "estimated_pipette_capacitance": 4,
@@ -44,17 +131,34 @@ const params = {
   "tau_sum": 0.001,
   "tau_clamp": 0.001,
   "tau_out": 0.0075,
-  "tau_rs": 0.1
-}
+  "tau_rs": 0.1,
+  "variable_time_points": 1000 // Default value
+});
 
+const variableTimePoints = ref(999); // New ref for the input field
 
 </script>
 
 <template>
-  <button @click="runModel2(params)">MODEL 2</button>
-  <button @click="runModel4(params)">Model 4</button>
+  <div class="column">
+
+  <div>
+    <input id="variableTimePoints" v-model="variableTimePoints" type="number" min="1" step="1">
+    <button @click="runFixedTime(params, variableTimePoints)">Fixed Time compile and solve</button>
+    <p>work: 2250, 2251, 2255</p>
+    <p>error: 2000, 2252, 2260, 2500</p>
+
+  </div>
+
+
+  <button style="margin-top: 50px;" @click="runVariableTime(params)">Variable Time compile and solve</button>
+</div>
+
 </template>
 
 <style scoped>
+input {
+  margin-right: 10px;
+}
 
 </style>

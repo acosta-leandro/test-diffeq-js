@@ -1,7 +1,6 @@
 import { compileModel, Options, Solver, Vector } from '@martinjrobins/diffeq-js';
 // const storeModel2 = paramsStoreModel2();
 import model2Data from './model2.json';
-import model4Data from './model4.json';
 
 const storeMockup = {
     params: {
@@ -118,7 +117,7 @@ const mountEquation = async (modelIndex, voltage, duration, ramp) => {
 
     equation = equation
         .replace('in = [ ]', `in = [ ${inputs.join(', ')} ]`)
-        .replace(`${voltageProtocolVariableName} { 0.0 * 1.0 }`, `${generateIdealVcString(voltage, duration, ramp, voltageProtocolVariableName)} `)
+        .replace(`${voltageProtocolVariableName} { 0.0 }`, `${generateIdealVcString(voltage, duration, ramp, voltageProtocolVariableName)} `)
         .replace(/out_i\s*{[^}]*}/, output.trim());
 
     return equation;
@@ -136,7 +135,7 @@ const compile = async (eq) => {
         console.log('compile');
         console.log(eq);
         await compileModel(eq);
-        state.solver = new Solver(new Options({fixed_times: true}));
+        state.solver = new Solver(new Options({}));
         isCompiled = true;
     }
     catch (e) {
@@ -147,17 +146,47 @@ const solveModel = (maxTime, inputs) => {
     try {
         const innerOutput = new Vector([]);
 
+        const innerTimes = new Vector([0, maxTime]);
+
+        state.solver.solve(innerTimes, inputs, innerOutput);
+        state.output = innerOutput.getFloat64Array();
+        state.times = innerTimes.getFloat64Array();
+
+        innerOutput.destroy();
+        innerTimes.destroy();
+        inputs.destroy();
+    } catch (err) {
+        console.error(err);
+    }
+};
+
+const compileFixed = async (eq) => {
+    try {
+        state.solver?.destroy()
+        console.log('compile');
+        console.log(eq);
+        await compileModel(eq);
+        state.solver = new Solver(new Options({fixed_times: true}));
+        isCompiled = true;
+    }
+    catch (e) {
+        console.log(e);
+    }
+};
+const solveModelFixed = (maxTime, inputs, steps) => {
+    try {
+        const innerOutput = new Vector([]);
+
         function linspace(start, stop, num) {
             const step = (stop - start) / num;
             return Array.from({length: num}, (_, i) => start + step * i);
         }
 
-        const tarr = linspace(0, maxTime, 1000);
+        const tarr = linspace(0, maxTime, steps);
         console.log("Requested times Length");
         console.log(tarr.length);
 
         const innerTimes = new Vector(tarr);
-        // const innerTimes = new Vector([0, maxTime]);
 
         state.solver.solve(innerTimes, inputs, innerOutput);
         state.output = innerOutput.getFloat64Array();
@@ -187,29 +216,29 @@ const modelConfigurations = {
         outputs: ['idealVC', 'voltageClampIPostPA', 'membraneV', 'membraneIIdeal', 'membraneIIon'],
         json: model2Data.eq,
         voltageProtocolVariableName: 'enginePace',
-        solve: (maxTime) => {
+        solve: (maxTime, steps) => {
             const modelParams = storeMockup.params;
             const inputs = createInputs(modelParams, modelConfigurations[2].parameters);
-            solveModel(maxTime, inputs);
+            solveModelFixed(maxTime, inputs, steps);
         },
     },
     4: {
         parameters: {
-            p1:"p1", p2:"p2", p3:"p3", p4:"p4", p5:"p5", p6:"p6", p7:"p7", p8:"p8", current_conductance:"p9",
-            leak_reversal_potential:"voltageClampELeak", estimated_leak_reversal_potential:"voltageClampELeakEst", seal_resistance:"voltageClampRSealMOhm",
-            estimated_seal_resistance:"voltageClampRSealEstMOhm", pipette_capacitance:"voltageClampCPrs", estimated_pipette_capacitance:"voltageClampCPrsEst",
-            series_resistance:"voltageClampRSeriesMOhm", estimated_series_resistance:"voltageClampRSeriesEstMOhm", estimated_membrane_capacitance:"voltageClampCmEst",
-            prediction:"voltageClampAlphaPPercentage", series_resistance_compensation:"voltageClampAlphaRPercentage",
-            tau_clamp:"voltageClampTauClamp", tau_out:"voltageClampTauOut", tau_rs:"voltageClampTauRs",
-            tau_sum:"voltageClampTauSum", effective_voltage_offset:"voltageClampVOffsetEff", membrane_capacitance:"cellCm",
-            bath_solution:"extraKo", pipette_solution:"kiKi"
+            p1: "ikrP1", p2: "ikrP2", p3: "ikrP3", p4: "ikrP4", p5: "ikrP5", p6: "ikrP6", p7: "ikrP7", p8: "ikrP8", current_conductance: "ikrP9",
+            leak_reversal_potential: "voltageClampELeak", estimated_leak_reversal_potential: "voltageClampELeakEst", seal_resistance: "voltageClampRSealMOhm",
+            estimated_seal_resistance: "voltageClampRSealEstMOhm", pipette_capacitance: "voltageClampCPrs", estimated_pipette_capacitance: "voltageClampCPrsEst",
+            series_resistance: "voltageClampRSeriesMOhm", estimated_series_resistance: "voltageClampRSeriesEstMOhm", estimated_membrane_capacitance: "voltageClampCmEst",
+            prediction: "voltageClampAlphaPPercentage", series_resistance_compensation: "voltageClampAlphaRPercentage",
+            tau_clamp: "voltageClampTauClamp", tau_out: "voltageClampTauOut", tau_rs: "voltageClampTauRs",
+            tau_sum: "voltageClampTauSum", effective_voltage_offset: "voltageClampVOffsetEff",
+            membrane_capacitance: "cellCm", bath_solution: "extraKo", pipette_solution: "kiKi"
         },
         outputs: ['idealVC', 'voltageClampIPostPA', 'membraneV', 'membraneIIdeal', 'membraneIIon'],
-        json: model4Data.eq,
-        voltageProtocolVariableName: 'idealVC',
+        json: model2Data.eq,
+        voltageProtocolVariableName: 'enginePace',
         solve: (maxTime) => {
             const modelParams = storeMockup.params;
-            const inputs = createInputs(modelParams, modelConfigurations[4].parameters);
+            const inputs = createInputs(modelParams, modelConfigurations[2].parameters);
             solveModel(maxTime, inputs);
         },
     },
@@ -258,9 +287,51 @@ const runModel = async (modelNumber, params, mustCompile = false) => {
         console.log(e);
     }
 };
+const runModelFixed = async (modelNumber, params, mustCompile = false, steps) => {
+    try {
+        const eq = await mountEquation(modelNumber, params.test_pulse_voltage, params.test_pulse_duration, params.test_pulse_is_ramp);
 
-export const runModel2 = (params, mustCompile) => runModel(2, params, mustCompile);
-export const runModel4 = (params, mustCompile) => runModel(4, params, mustCompile);
+        if (mustCompile || !isCompiled) {
+            await compileFixed(eq);
+        }
+
+        const maxTime = params.test_pulse_duration.reduce((acc, curr) => acc + parseInt(curr), 0);
+        modelConfigurations[modelNumber].solve(maxTime, steps);
+
+
+        const command_voltage = [];
+        const recorded_current = [];
+        const membrane_voltage = [];
+        const ideal_current =[];
+        const cell_current = [];
+
+        const lists = [command_voltage, recorded_current, membrane_voltage, ideal_current, cell_current];
+
+        state.output.forEach((output, i) => {
+            lists[i % lists.length].push(output);
+        });
+
+
+        const data = {
+            command_voltage: command_voltage,
+            recorded_current: recorded_current,
+            membrane_voltage: membrane_voltage,
+            ideal_current: ideal_current,
+            cell_current: cell_current,
+            time: state.times,
+            plot_range: [],
+        };
+
+        console.log("Solve Outputs");
+        console.log(data);
+        return data;
+    } catch (e) {
+        console.log(e);
+    }
+};
+
+export const runFixedTime = (params, steps) => runModelFixed(2, params, true, steps);
+export const runVariableTime = (params) => runModel(4, params, true);
 
 
 
