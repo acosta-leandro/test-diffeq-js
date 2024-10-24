@@ -57,43 +57,65 @@ const state = {
     times: null,
 };
 
-
-
+/**
+ * Generates DiffSL-compatible voltage protocol using heaviside functions.
+ *
+ * Constructs a string that represents a piecewise function of voltage
+ * over time, using the provided voltage steps, durations, and ramp flags. 
+ * The resulting string is formatted to be used in DiffSL model.
+ *
+ * @param {Array<number>} voltage - An array of voltage values for each step.
+ * @param {Array<number>} duration - An array of duration values for each step.
+ * @param {Array<boolean>} ramp - An array of boolean flags with ramp[i] 
+ *                                indicating whether to ramp from 
+ *                                voltage[i-1] to voltage[i].
+ * @param {string} variableName - The name of the variable to be used in the 
+ *                                generated string.
+ * @returns {string} - A string representing the voltage protocol function.
+ */
 function generateIdealVcString(voltage, duration, ramp, variableName) {
-    let idealVcStr = variableName + ' {\n';
-    let accumulatedVoltage = parseInt(voltage[0]);
-    let accumulatedDuration = 0;
+    const n = voltage.length;
+    let idealVcStr = variableName + " {\n";
+    let t0 = 0;
 
-    idealVcStr += ` ${accumulatedVoltage}\n`;
+    for (let i = 0; i < n; i++) {
+        const currVolt = parseInt(voltage[i]);
+        const currDuration = parseInt(duration[i]);
 
-    for (let i = 1; i < voltage.length; i++) {
-        // console.log(voltage[i]);
-        let currentVoltage = parseInt(voltage[i]);
-        let currentDuration = parseInt(duration[i - 1]);
+        const t1 = t0 + currDuration;
 
+        // Ramps are disabled for first and last pulse
+        if (ramp[i] && i > 0 && i < n - 1) {
+            // Expr: (v0 + (v1-v0) * (t-t0) / (t1-t0)) * (heaviside(t-t0) - heaviside(t-t1))
+            // v0 is the voltage the ramp starts at, v1 is where it ends
+            // t0 is the time the ramp starts, t1 is when it ends
+            const prevVolt = voltage[i - 1];
+            const voltDiff = currVolt - prevVolt;
+            const vDiffStr = `${voltDiff < 0 ? "-" : "+"} ${Math.abs(voltDiff)}`;
+            idealVcStr += `+ (${prevVolt} ${vDiffStr} * (t -${t0}) / ${currDuration})`;
+            idealVcStr += ` * (heaviside(t - ${t0}) - heaviside(t - ${t1}))\n`;
 
-        accumulatedDuration += currentDuration;
-        let prevVoltage = 0;
-        if (i > 0) {
-            prevVoltage = voltage[i - 1];
-        }
-        if (ramp[i]) {
-            idealVcStr += `${(currentVoltage - prevVoltage) > 0 ? '+' : '-'} ${(Math.abs(currentVoltage - prevVoltage))} / ${parseInt(duration[i])} * (t - ${accumulatedDuration}) * heaviside(t - ${accumulatedDuration}) ${(currentVoltage - prevVoltage) > 0 ? '-' : '+'} ${Math.abs((currentVoltage - prevVoltage))} / ${parseInt(duration[i])} * (t - ${accumulatedDuration + parseInt(duration[i])}) * heaviside(t - ${accumulatedDuration + parseInt(duration[i])}) \n`;
         } else {
-            if (currentVoltage - prevVoltage === 0) {
-                const lastIndex = idealVcStr.lastIndexOf(')');
-                if (lastIndex !== -1) {
-                    idealVcStr = idealVcStr.slice(0, lastIndex) + `) * heaviside(t - ${accumulatedDuration})` + idealVcStr.slice(lastIndex + 1);
-                }
+            // Expr: v * (heaviside(t-t0) - heaviside(t-t1))
+            // v is the voltage, t0 is its start time, t1 is its end time
+            const vStr = `${currVolt < 0 ? "-" : "+"}${Math.abs(currVolt)}`;
+            if (i == 0) {
+                idealVcStr += `${vStr} * (heaviside(t) - heaviside(t - ${t1}))\n`;
+            } else if (i == n - 1) {
+                // Duration isn't limited for final pulse
+                idealVcStr += `${vStr} * heaviside(t - ${t0})\n`;
             } else {
-                idealVcStr += `${(currentVoltage - prevVoltage) > -1 ? '+' : '-'} ${Math.abs(currentVoltage - prevVoltage)} * heaviside (t - ${accumulatedDuration})\n`;
+                idealVcStr += `${vStr} * (heaviside(t - ${t0}) - heaviside(t - ${t1}))\n`;
             }
         }
+
+        t0 = t1;
     }
 
-    idealVcStr += '}';
+    idealVcStr += "}";
     return idealVcStr;
 }
+
 const mountEquation = async (modelIndex, voltage, duration, ramp) => {
     const {
         parameters,
