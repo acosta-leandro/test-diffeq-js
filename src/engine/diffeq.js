@@ -162,7 +162,12 @@ const compile = async (eq) => {
         console.log("compile");
         console.log(eq);
         await compileModel(eq);
-        const options = new Options({ max_out_steps: 400000 });
+
+        // Memory errors will occur when max_out_steps is more than ~ 419430
+        // due to the emscripten compiler memory limit of 16777216 bytes.
+        // Setting an upper limit here throws an early error before encountering
+        // memory issues. It's an indicator of deteriorating performance.
+        const options = new Options({ max_out_steps: 100000 });
         state.solver = new Solver(options);
         isCompiled = true;
     } catch (e) {
@@ -193,6 +198,11 @@ const compileFixed = async (eq) => {
         console.log("compile");
         console.log(eq);
         await compileModel(eq);
+
+        // mxsteps (default 500) is the max number of solver steps between time points.
+        // Variable times are automatically chosen to need just 1 step between time points.
+        // Since we are manually specifiying a fixed list of time points here, there
+        // may be a need for more than 500 steps from one time point to the next.
         const options = new Options({ fixed_times: true, mxsteps: 10000 });
         state.solver = new Solver(options);
         isCompiled = true;
