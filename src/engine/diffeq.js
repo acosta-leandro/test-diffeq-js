@@ -102,7 +102,7 @@ function generateIdealVcString(voltage, duration, ramp, variableName, func = "si
             // v is the voltage, t0 is its start time, t1 is its end time
             const vStr = `${currVolt < 0 ? "-" : "+"}${Math.abs(currVolt)}`;
             if (i == 0) {
-                protocol.push(`${vStr} * (${func}(t) - ${func}(t - ${t1}))`);
+                protocol.push(`${vStr} * (1 - ${func}(t - ${t1}))`);
             } else if (i == n - 1) {
                 // Duration isn't limited for final pulse
                 protocol.push(`${vStr} * ${func}(t - ${t0})`);
