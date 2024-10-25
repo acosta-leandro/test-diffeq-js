@@ -58,7 +58,7 @@ const state = {
 };
 
 /**
- * Generates DiffSL-compatible voltage protocol using heaviside functions.
+ * Generates DiffSL-compatible voltage protocol using threshold functions.
  *
  * Constructs a string that represents a piecewise function of voltage
  * over time, using the provided voltage steps, durations, and ramp flags. 
@@ -71,9 +71,12 @@ const state = {
  *                                voltage[i-1] to voltage[i].
  * @param {string} variableName - The name of the variable to be used in the 
  *                                generated string.
+ * @param {string} func - The threshold function e.g. "sigmoid" or "heaviside",
+ *                        which should have range 0 <= x <= 1
+ *
  * @returns {string} - A string representing the voltage protocol function.
  */
-function generateIdealVcString(voltage, duration, ramp, variableName) {
+function generateIdealVcString(voltage, duration, ramp, variableName, func = "sigmoid") {
     const n = voltage.length;
     let t0 = 0;
     let protocol = [];
@@ -86,26 +89,26 @@ function generateIdealVcString(voltage, duration, ramp, variableName) {
 
         // Ramps are disabled for first and last pulse
         if (ramp[i] && i > 0 && i < n - 1) {
-            // Expr: (v0 + (v1-v0) * (t-t0) / (t1-t0)) * (heaviside(t-t0) - heaviside(t-t1))
+            // Expr: (v0 + (v1-v0) * (t-t0) / (t1-t0)) * (func(t-t0) - func(t-t1))
             // v0 is the voltage the ramp starts at, v1 is where it ends
             // t0 is the time the ramp starts, t1 is when it ends
             const prevVolt = voltage[i - 1];
             const voltDiff = currVolt - prevVolt;
             const vDiffStr = `${voltDiff < 0 ? "-" : "+"} ${Math.abs(voltDiff)}`;
             protocol.push(`+ (${prevVolt} ${vDiffStr} * (t - ${t0}) / ${currDuration})` +
-                ` * (heaviside(t - ${t0}) - heaviside(t - ${t1}))`);
+                ` * (${func}(t - ${t0}) - ${func}(t - ${t1}))`);
         } else {
-            // Expr: v * (heaviside(t-t0) - heaviside(t-t1))
+            // Expr: v * (func(t-t0) - func(t-t1))
             // v is the voltage, t0 is its start time, t1 is its end time
             const vStr = `${currVolt < 0 ? "-" : "+"}${Math.abs(currVolt)}`;
             if (i == 0) {
-                protocol.push(`${vStr} * (heaviside(t) - heaviside(t - ${t1}))`);
+                protocol.push(`${vStr} * (${func}(t) - ${func}(t - ${t1}))`);
             } else if (i == n - 1) {
                 // Duration isn't limited for final pulse
-                protocol.push(`${vStr} * heaviside(t - ${t0})`);
+                protocol.push(`${vStr} * ${func}(t - ${t0})`);
             } else {
                 protocol.push(
-                    `${vStr} * (heaviside(t - ${t0}) - heaviside(t - ${t1}))`
+                    `${vStr} * (${func}(t - ${t0}) - ${func}(t - ${t1}))`
                 );
             }
         }
