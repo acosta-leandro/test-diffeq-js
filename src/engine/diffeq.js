@@ -158,14 +158,14 @@ const createInputs = (modelParams, parameters) => {
 
 const compile = async (eq) => {
     try {
-        state.solver?.destroy()
-        console.log('compile');
+        state.solver?.destroy();
+        console.log("compile");
         console.log(eq);
         await compileModel(eq);
-        state.solver = new Solver(new Options({}));
+        const options = new Options({ max_out_steps: 400000 });
+        state.solver = new Solver(options);
         isCompiled = true;
-    }
-    catch (e) {
+    } catch (e) {
         console.log(e);
     }
 };
@@ -189,14 +189,14 @@ const solveModel = (maxTime, inputs) => {
 
 const compileFixed = async (eq) => {
     try {
-        state.solver?.destroy()
-        console.log('compile');
+        state.solver?.destroy();
+        console.log("compile");
         console.log(eq);
         await compileModel(eq);
-        state.solver = new Solver(new Options({fixed_times: true}));
+        const options = new Options({ fixed_times: true, mxsteps: 10000 });
+        state.solver = new Solver(options);
         isCompiled = true;
-    }
-    catch (e) {
+    } catch (e) {
         console.log(e);
     }
 };
