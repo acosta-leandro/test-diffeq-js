@@ -75,8 +75,8 @@ const state = {
  */
 function generateIdealVcString(voltage, duration, ramp, variableName) {
     const n = voltage.length;
-    let idealVcStr = variableName + " {\n";
     let t0 = 0;
+    let protocol = [];
 
     for (let i = 0; i < n; i++) {
         const currVolt = parseInt(voltage[i]);
@@ -92,28 +92,29 @@ function generateIdealVcString(voltage, duration, ramp, variableName) {
             const prevVolt = voltage[i - 1];
             const voltDiff = currVolt - prevVolt;
             const vDiffStr = `${voltDiff < 0 ? "-" : "+"} ${Math.abs(voltDiff)}`;
-            idealVcStr += `+ (${prevVolt} ${vDiffStr} * (t -${t0}) / ${currDuration})`;
-            idealVcStr += ` * (heaviside(t - ${t0}) - heaviside(t - ${t1}))\n`;
-
+            protocol.push(`+ (${prevVolt} ${vDiffStr} * (t - ${t0}) / ${currDuration})` +
+                ` * (heaviside(t - ${t0}) - heaviside(t - ${t1}))`);
         } else {
             // Expr: v * (heaviside(t-t0) - heaviside(t-t1))
             // v is the voltage, t0 is its start time, t1 is its end time
             const vStr = `${currVolt < 0 ? "-" : "+"}${Math.abs(currVolt)}`;
             if (i == 0) {
-                idealVcStr += `${vStr} * (heaviside(t) - heaviside(t - ${t1}))\n`;
+                protocol.push(`${vStr} * (heaviside(t) - heaviside(t - ${t1}))`);
             } else if (i == n - 1) {
                 // Duration isn't limited for final pulse
-                idealVcStr += `${vStr} * heaviside(t - ${t0})\n`;
+                protocol.push(`${vStr} * heaviside(t - ${t0})`);
             } else {
-                idealVcStr += `${vStr} * (heaviside(t - ${t0}) - heaviside(t - ${t1}))\n`;
+                protocol.push(
+                    `${vStr} * (heaviside(t - ${t0}) - heaviside(t - ${t1}))`
+                );
             }
         }
 
         t0 = t1;
     }
 
-    idealVcStr += "}";
-    return idealVcStr;
+    const protocolEq = protocol.map((x) => "  " + x).join("\n");
+    return `${variableName} {\n${protocolEq}\n}`;
 }
 
 const mountEquation = async (modelIndex, voltage, duration, ramp) => {
