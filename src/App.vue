@@ -23,7 +23,7 @@ const params = ref({
   "bath_solution": 5.4,
   "test_pulse_duration": [
     "250",
-    "5",
+    "50",
     "400",
     "200",
     "1000",
@@ -48,11 +48,12 @@ const params = ref({
     "500",
     "500",
     "500",
+    "1000",
     "500",
     "10",
     "100",
     "390",
-    "100"
+    "500"
   ],
   "test_pulse_voltage": [
     "-80",
@@ -84,9 +85,9 @@ const params = ref({
     "-80",
     "40",
     "-70",
+    "-110",
     "-120",
-    "-120",
-    "-80"
+    "-50"
   ],
   "test_pulse_is_ramp": [
       false,

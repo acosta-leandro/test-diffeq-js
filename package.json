@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@martinjrobins/diffeq-js": "^0.1.5",
+    "@martinjrobins/diffeq-js": "^0.1.7",
     "vue": "^3.4.29"
   },
   "devDependencies": {
