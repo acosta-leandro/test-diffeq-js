@@ -1,8 +1,8 @@
 import { compileModel, Options, Solver, Vector } from '@martinjrobins/diffeq-js';
-// const storeModel2 = paramsStoreModel2();
 import model2Data from './model2.json';
+import vc_model2_ideal from './model2_ideal.json';
 
-const storeMockup = {
+const storeModel2 = {
     params: {
         "membrane_capacitance": 20,
         "current_conductance": 50,
@@ -50,328 +50,245 @@ const storeMockup = {
     }
 }
 
-let isCompiled = false;
+const storeModel4 = {
+    params: {
+        "membrane_capacitance": 20,
+        "current_conductance": 50,
+        "p1": 2.07e-3,
+        "p2": 7.17e-2,
+        "p3": 3.44e-5,
+        "p4": 6.18e-2,
+        "p5": 4.18e-1,
+        "p6": 2.58e-2,
+        "p7": 4.75e-2,
+        "p8": 2.51e-2,
+        "pipette_solution": 130,
+        "bath_solution": 5.4,
+        "test_pulse_duration": [
+            500,
+            500,
+            500
+        ],
+        "test_pulse_voltage": [
+            -80,
+            40,
+            -40
+        ],
+        "test_pulse_is_ramp": [
+            false,
+            false,
+            false
+        ],
+    }
+}
+
+// State management
 const state = {
-    solver: null,
-    output: null,
-    times: null,
+    solvers: {},
+    outputs: {},
+    times: {},
 };
 
-/**
- * Generates DiffSL-compatible voltage protocol using sigmoids.
- *
- * Constructs a string that represents a piecewise function of voltage
- * over time, using the provided voltage steps, durations, and ramp flags. 
- * The resulting string is formatted to be used in DiffSL model.
- *
- * @param {Array<number>} voltage - An array of voltage values for each step.
- * @param {Array<number>} duration - An array of duration values for each step.
- * @param {Array<boolean>} ramp - An array of boolean flags with ramp[i] 
- *                                indicating whether to ramp from 
- *                                voltage[i-1] to voltage[i].
- * @param {string} variableName - The name of the variable to be used in the 
- *                                generated string.
- *
- * @returns {string} - A string representing the voltage protocol function.
- */
-function generateIdealVcString(voltage, duration, ramp, variableName) {
+// Model configurations
+const modelConfigurations = {
+    2: {
+        parameters: {
+            p1: "ikrP1", p2: "ikrP2", p3: "ikrP3", p4: "ikrP4", p5: "ikrP5", 
+            p6: "ikrP6", p7: "ikrP7", p8: "ikrP8", current_conductance: "ikrP9",
+            leak_reversal_potential: "voltageClampELeak", 
+            estimated_leak_reversal_potential: "voltageClampELeakEst", 
+            seal_resistance: "voltageClampRSealMOhm",
+            estimated_seal_resistance: "voltageClampRSealEstMOhm", 
+            pipette_capacitance: "voltageClampCPrs", 
+            estimated_pipette_capacitance: "voltageClampCPrsEst",
+            series_resistance: "voltageClampRSeriesMOhm", 
+            estimated_series_resistance: "voltageClampRSeriesEstMOhm", 
+            estimated_membrane_capacitance: "voltageClampCmEst",
+            prediction: "voltageClampAlphaPPercentage", 
+            series_resistance_compensation: "voltageClampAlphaRPercentage",
+            tau_clamp: "voltageClampTauClamp", tau_out: "voltageClampTauOut", 
+            tau_rs: "voltageClampTauRs",
+            tau_sum: "voltageClampTauSum", 
+            effective_voltage_offset: "voltageClampVOffsetEff",
+            membrane_capacitance: "cellCm", 
+            bath_solution: "extraKo", 
+            pipette_solution: "kiKi"
+        },
+        outputs: ['idealVC', 'voltageClampIPostPA', 'membraneV', 'membraneIIdeal', 'membraneIIon'],
+        json: model2Data.eq,
+        voltageProtocolVariableName: 'enginePace',
+        defaultParams: storeModel2.params
+    },
+    4: {
+        parameters: {
+            membrane_capacitance: "cellCm",
+            bath_solution: "extraKo",
+            pipette_solution: "kiKi",
+            p1: "ikrP1",
+            p2: "ikrP2",
+            p3: "ikrP3",
+            p4: "ikrP4",
+            p5: "ikrP5",
+            p6: "ikrP6",
+            p7: "ikrP7",
+            p8: "ikrP8",
+            current_conductance: "ikrP9",
+        },
+        outputs: ["membraneIIon"],
+        outputNames: ["ideal_current"],
+        json: vc_model2_ideal.eq,
+        voltageProtocolVariableName: "enginePace",
+        defaultParams: storeModel4.params
+    }
+};
+
+// Helper functions
+const generateIdealVcString = (voltage, duration, ramp, variableName) => {
+    const SCALE = 5000;
     const n = voltage.length;
-    const scale = 5000;
     let t0 = 0;
     let protocol = [];
 
     for (let i = 0; i < n; i++) {
         const currVolt = parseInt(voltage[i]);
         const currDuration = parseInt(duration[i]);
-
         const t1 = t0 + currDuration;
 
-        // Ramps are disabled for first and last pulse
         if (ramp[i] && i > 0 && i < n - 1) {
-            // Expr: (v0 + (v1-v0) * (t-t0) / (t1-t0)) * (sigmoid(t-t0) - sigmoid(t-t1))
-            // v0 is the voltage the ramp starts at, v1 is where it ends
-            // t0 is the time the ramp starts, t1 is when it ends
             const prevVolt = voltage[i - 1];
             const voltDiff = currVolt - prevVolt;
             const vDiffStr = `${voltDiff < 0 ? "-" : "+"} ${Math.abs(voltDiff)}`;
             protocol.push(
                 `+ (${prevVolt} ${vDiffStr} * (t - ${t0}) / ${currDuration})` +
-                ` * (sigmoid((t - ${t0}) * ${scale}) - sigmoid((t - ${t1}) * ${scale}))`
+                ` * (sigmoid((t - ${t0}) * ${SCALE}) - sigmoid((t - ${t1}) * ${SCALE}))`
             );
         } else {
-            // Expr: v * (sigmoid(t-t0) - sigmoid(t-t1))
-            // v is the voltage, t0 is its start time, t1 is its end time
             const vStr = `${currVolt < 0 ? "-" : "+"}${Math.abs(currVolt)}`;
-            if (i == 0) {
-                protocol.push(`${vStr} * (1 - sigmoid((t - ${t1}) * ${scale}))`);
-            } else if (i == n - 1) {
-                // Duration isn't limited for final pulse
-                protocol.push(`${vStr} * sigmoid((t - ${t0}) * ${scale})`);
+            if (i === 0) {
+                protocol.push(`${vStr} * (1 - sigmoid((t - ${t1}) * ${SCALE}))`);
+            } else if (i === n - 1) {
+                protocol.push(`${vStr} * sigmoid((t - ${t0}) * ${SCALE})`);
             } else {
                 protocol.push(
-                    `${vStr} * (sigmoid((t - ${t0}) * ${scale}) - sigmoid((t - ${t1}) * ${scale}))`
+                    `${vStr} * (sigmoid((t - ${t0}) * ${SCALE}) - sigmoid((t - ${t1}) * ${SCALE}))`
                 );
             }
         }
-
         t0 = t1;
     }
 
-    const protocolEq = protocol.map((x) => "  " + x).join("\n");
-    return `${variableName} {\n${protocolEq}\n}`;
-}
-
-const mountEquation = async (modelIndex, voltage, duration, ramp) => {
-    const {
-        parameters,
-        outputs,
-        json,
-        voltageProtocolVariableName
-    } = modelConfigurations[modelIndex];
-
-    const output = `out_i  {\n ${outputs.join(',\n ')} \n}`;
-    let equation;
-
-    try {
-        // equation = await fetchText(json);
-        equation = json;
-    } catch (error) {
-        console.error(`Error fetching equation for model ${modelIndex}:`, error);
-        throw error; // Re-throw to handle further up if necessary
-    }
-
-    const inputs = Object.values(parameters);
-
-    equation = equation
-        .replace('in = [ ]', `in = [ ${inputs.join(', ')} ]`)
-        .replace(`${voltageProtocolVariableName} { 0.0 }`, `${generateIdealVcString(voltage, duration, ramp, voltageProtocolVariableName)} `)
-        .replace(/out_i\s*{[^}]*}/, output.trim());
-
-    return equation;
+    return `${variableName} {\n${protocol.map(x => "  " + x).join("\n")}\n}`;
 };
+
 const createInputs = (modelParams, parameters) => {
-    console.log("Solve Inputs");
-    console.log(modelParams);
     return new Vector(Object.keys(parameters).map(key => modelParams[key]));
 };
 
+const mountEquation = async (modelIndex, voltage, duration, ramp) => {
+    const config = modelConfigurations[modelIndex];
+    const output = `out_i  {\n ${config.outputs.join(',\n ')} \n}`;
+    
+    return config.json
+        .replace('in = [ ]', `in = [ ${Object.values(config.parameters).join(', ')} ]`)
+        .replace(
+            `${config.voltageProtocolVariableName} { 0.0 }`, 
+            generateIdealVcString(voltage, duration, ramp, config.voltageProtocolVariableName)
+        )
+        .replace(/out_i\s*{[^}]*}/, output.trim());
+};
 
-const compile = async (eq) => {
+const compileEquation = async (eq, id) => {
     try {
-        state.solver?.destroy();
-        console.log("compile");
-        console.log(eq);
+        console.log("Compiling equation", id);
+        state.solvers[id]?.destroy();
         await compileModel(eq);
-
-        // Memory errors will occur when max_out_steps is more than ~ 419430
-        // due to the emscripten compiler memory limit of 16777216 bytes.
-        // Setting an upper limit here throws an early error before encountering
-        // memory issues. It's an indicator of deteriorating performance.
-        const options = new Options({ max_out_steps: 100000 });
-        state.solver = new Solver(options);
-        isCompiled = true;
+        console.log("Compiled equation", id);
+        const options = new Options({ fixed_times: false, mxsteps: 10000 });
+        state.solvers[id] = new Solver(options);
     } catch (e) {
-        console.log(e);
+        console.error('Compilation error:', e);
+        throw e;
     }
 };
-const solveModel = (maxTime, inputs) => {
-    try {
-        const innerOutput = new Vector([]);
 
+const solveEquation = async (id, maxTime, modelParams) => {
+    try {
+        console.log("Solving equation", id);
+        const config = modelConfigurations[id];
+        const innerOutput = new Vector([]);
         const innerTimes = new Vector([0, maxTime]);
+        const inputs = createInputs(modelParams, config.parameters);
 
-        state.solver.solve(innerTimes, inputs, innerOutput);
-        state.output = innerOutput.getFloat64Array();
-        state.times = innerTimes.getFloat64Array();
+        state.solvers[id].solve(innerTimes, inputs, innerOutput);
 
-        innerOutput.destroy();
-        innerTimes.destroy();
-        inputs.destroy();
-    } catch (err) {
-        console.error(err);
-    }
-};
-
-const compileFixed = async (eq) => {
-    try {
-        state.solver?.destroy();
-        console.log("compile");
-        console.log(eq);
-        await compileModel(eq);
-
-        // mxsteps (default 500) is the max number of solver steps between time points.
-        // Variable times are automatically chosen to need just 1 step between time points.
-        // Since we are manually specifiying a fixed list of time points here, there
-        // may be a need for more than 500 steps from one time point to the next.
-        const options = new Options({ fixed_times: true, mxsteps: 10000 });
-        state.solver = new Solver(options);
-        isCompiled = true;
-    } catch (e) {
-        console.log(e);
-    }
-};
-const solveModelFixed = (maxTime, inputs, steps) => {
-    try {
-        const innerOutput = new Vector([]);
-
-        function linspace(start, stop, num) {
-            const step = (stop - start) / num;
-            return Array.from({length: num}, (_, i) => start + step * i);
-        }
-
-        const tarr = linspace(0, maxTime, steps);
-        console.log("Requested times Length");
-        console.log(tarr.length);
-
-        const innerTimes = new Vector(tarr);
-
-        state.solver.solve(innerTimes, inputs, innerOutput);
-        state.output = innerOutput.getFloat64Array();
-        state.times = innerTimes.getFloat64Array();
+        state.outputs[id] = innerOutput.getFloat64Array();
+        state.times[id] = innerTimes.getFloat64Array();
 
         innerOutput.destroy();
         innerTimes.destroy();
         inputs.destroy();
+        console.log("Solved equation", id);
+        console.log("Outputs", state.outputs[id].length);
+        const outputArrays = Array(config.outputs.length).fill().map(() => []);
+        state.outputs[id].forEach((output, i) => {
+            outputArrays[i % outputArrays.length].push(output);
+        });
+
+        return {
+            command_voltage: outputArrays[0],
+            recorded_current: outputArrays[1],
+            membrane_voltage: outputArrays[2],
+            ideal_current: outputArrays[3],
+            cell_current: outputArrays[4],
+            time: state.times[id],
+            plot_range: [],
+        };
     } catch (err) {
-        console.error(err);
+        console.error('Solving error:', err);
+        throw err;
     }
 };
 
+const prepareEquation = async (modelNumber, params) => {
+    const eq = await mountEquation(
+        modelNumber, 
+        params.test_pulse_voltage, 
+        params.test_pulse_duration, 
+        params.test_pulse_is_ramp
+    );
+    const maxTime = params.test_pulse_duration.reduce((acc, curr) => acc + parseInt(curr), 0);
+    return { eq, maxTime };
+};
 
-const modelConfigurations = {
-    2: {
-        parameters: {
-            p1: "ikrP1", p2: "ikrP2", p3: "ikrP3", p4: "ikrP4", p5: "ikrP5", p6: "ikrP6", p7: "ikrP7", p8: "ikrP8", current_conductance: "ikrP9",
-            leak_reversal_potential: "voltageClampELeak", estimated_leak_reversal_potential: "voltageClampELeakEst", seal_resistance: "voltageClampRSealMOhm",
-            estimated_seal_resistance: "voltageClampRSealEstMOhm", pipette_capacitance: "voltageClampCPrs", estimated_pipette_capacitance: "voltageClampCPrsEst",
-            series_resistance: "voltageClampRSeriesMOhm", estimated_series_resistance: "voltageClampRSeriesEstMOhm", estimated_membrane_capacitance: "voltageClampCmEst",
-            prediction: "voltageClampAlphaPPercentage", series_resistance_compensation: "voltageClampAlphaRPercentage",
-            tau_clamp: "voltageClampTauClamp", tau_out: "voltageClampTauOut", tau_rs: "voltageClampTauRs",
-            tau_sum: "voltageClampTauSum", effective_voltage_offset: "voltageClampVOffsetEff",
-            membrane_capacitance: "cellCm", bath_solution: "extraKo", pipette_solution: "kiKi"
-        },
-        outputs: ['idealVC', 'voltageClampIPostPA', 'membraneV', 'membraneIIdeal', 'membraneIIon'],
-        json: model2Data.eq,
-        voltageProtocolVariableName: 'enginePace',
-        solve: (maxTime, steps) => {
-            const modelParams = storeMockup.params;
-            const inputs = createInputs(modelParams, modelConfigurations[2].parameters);
-            solveModelFixed(maxTime, inputs, steps);
-        },
-    },
-    4: {
-        parameters: {
-            p1: "ikrP1", p2: "ikrP2", p3: "ikrP3", p4: "ikrP4", p5: "ikrP5", p6: "ikrP6", p7: "ikrP7", p8: "ikrP8", current_conductance: "ikrP9",
-            leak_reversal_potential: "voltageClampELeak", estimated_leak_reversal_potential: "voltageClampELeakEst", seal_resistance: "voltageClampRSealMOhm",
-            estimated_seal_resistance: "voltageClampRSealEstMOhm", pipette_capacitance: "voltageClampCPrs", estimated_pipette_capacitance: "voltageClampCPrsEst",
-            series_resistance: "voltageClampRSeriesMOhm", estimated_series_resistance: "voltageClampRSeriesEstMOhm", estimated_membrane_capacitance: "voltageClampCmEst",
-            prediction: "voltageClampAlphaPPercentage", series_resistance_compensation: "voltageClampAlphaRPercentage",
-            tau_clamp: "voltageClampTauClamp", tau_out: "voltageClampTauOut", tau_rs: "voltageClampTauRs",
-            tau_sum: "voltageClampTauSum", effective_voltage_offset: "voltageClampVOffsetEff",
-            membrane_capacitance: "cellCm", bath_solution: "extraKo", pipette_solution: "kiKi"
-        },
-        outputs: ['idealVC', 'voltageClampIPostPA', 'membraneV', 'membraneIIdeal', 'membraneIIon'],
-        json: model2Data.eq,
-        voltageProtocolVariableName: 'enginePace',
-        solve: (maxTime) => {
-            const modelParams = storeMockup.params;
-            const inputs = createInputs(modelParams, modelConfigurations[2].parameters);
-            solveModel(maxTime, inputs);
-        },
-    },
+// Public API
+export const compileModel2 = async () => {
+    const params = storeModel2.params;
+    const { eq } = await prepareEquation(2, params);
+    await compileEquation(eq, 2);
+};
+
+export const compileModel4 = async () => {
+    const params = storeModel4.params;
+    const { eq } = await prepareEquation(4, params);
+    await compileEquation(eq, 4);
+};
+
+export const solveModel2 = async () => {
+    const params = storeModel2.params;
+    const { maxTime } = await prepareEquation(2, params);
+    return await solveEquation(2, maxTime, modelConfigurations[2].defaultParams);
+};
+
+export const solveModel4 = async () => {
+    const params = storeModel4.params;
+    const { maxTime } = await prepareEquation(4, params);
+    return await solveEquation(4, maxTime, modelConfigurations[4].defaultParams);
 };
 
 
-const runModel = async (modelNumber, params, mustCompile = false) => {
-    try {
-        const eq = await mountEquation(modelNumber, params.test_pulse_voltage, params.test_pulse_duration, params.test_pulse_is_ramp);
-
-        if (mustCompile || !isCompiled) {
-            await compile(eq);
-        }
-
-        const maxTime = params.test_pulse_duration.reduce((acc, curr) => acc + parseInt(curr), 0);
-        modelConfigurations[modelNumber].solve(maxTime);
-
-
-        const command_voltage = [];
-        const recorded_current = [];
-        const membrane_voltage = [];
-        const ideal_current =[];
-        const cell_current = [];
-
-        const lists = [command_voltage, recorded_current, membrane_voltage, ideal_current, cell_current];
-
-        state.output.forEach((output, i) => {
-            lists[i % lists.length].push(output);
-        });
-
-
-        const data = {
-            command_voltage: command_voltage,
-            recorded_current: recorded_current,
-            membrane_voltage: membrane_voltage,
-            ideal_current: ideal_current,
-            cell_current: cell_current,
-            time: state.times,
-            plot_range: [],
-        };
-
-        console.log("Solve Outputs");
-        console.log(data);
-        return data;
-    } catch (e) {
-        console.log(e);
-    }
+export const printState = () => {
+    console.log(state);
 };
-const runModelFixed = async (modelNumber, params, mustCompile = false, steps) => {
-    try {
-        const eq = await mountEquation(modelNumber, params.test_pulse_voltage, params.test_pulse_duration, params.test_pulse_is_ramp);
-
-        if (mustCompile || !isCompiled) {
-            await compileFixed(eq);
-        }
-
-        const maxTime = params.test_pulse_duration.reduce((acc, curr) => acc + parseInt(curr), 0);
-        modelConfigurations[modelNumber].solve(maxTime, steps);
-
-
-        const command_voltage = [];
-        const recorded_current = [];
-        const membrane_voltage = [];
-        const ideal_current =[];
-        const cell_current = [];
-
-        const lists = [command_voltage, recorded_current, membrane_voltage, ideal_current, cell_current];
-
-        state.output.forEach((output, i) => {
-            lists[i % lists.length].push(output);
-        });
-
-
-        const data = {
-            command_voltage: command_voltage,
-            recorded_current: recorded_current,
-            membrane_voltage: membrane_voltage,
-            ideal_current: ideal_current,
-            cell_current: cell_current,
-            time: state.times,
-            plot_range: [],
-        };
-
-        console.log("Solve Outputs");
-        console.log(data);
-        return data;
-    } catch (e) {
-        console.log(e);
-    }
-};
-
-export const runFixedTime = (params, steps) => runModelFixed(2, params, true, steps);
-export const runVariableTime = (params) => runModel(4, params, true);
-
-
-
 
 
 
